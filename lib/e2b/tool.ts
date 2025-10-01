@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
 import { getDesktop } from "./utils";
 
 const wait = async (seconds: number) => {
@@ -8,7 +8,7 @@ const wait = async (seconds: number) => {
 export const resolution = { x: 1024, y: 768 };
 
 export const computerTool = (sandboxId: string) =>
-  anthropic.tools.computer_20250124({
+  google.tools.computer_20250124({
     displayWidthPx: resolution.x,
     displayHeightPx: resolution.y,
     displayNumber: 1,
@@ -135,7 +135,7 @@ export const computerTool = (sandboxId: string) =>
   });
 
 export const bashTool = (sandboxId?: string) =>
-  anthropic.tools.bash_20250124({
+  google.tools.bash_20250124({
     execute: async ({ command }) => {
       const desktop = await getDesktop(sandboxId);
 
