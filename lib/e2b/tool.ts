@@ -1,4 +1,5 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { tool } from "ai";
+import { z } from "zod";
 import { getDesktop } from "./utils";
 
 const wait = async (seconds: number) => {
@@ -8,10 +9,28 @@ const wait = async (seconds: number) => {
 export const resolution = { x: 1024, y: 768 };
 
 export const computerTool = (sandboxId: string) =>
-  anthropic.tools.computer_20250124({
-    displayWidthPx: resolution.x,
-    displayHeightPx: resolution.y,
-    displayNumber: 1,
+  tool({
+    description: "Control a computer desktop by taking screenshots and performing actions like clicking, typing, and scrolling",
+    parameters: z.object({
+      action: z.enum([
+        "screenshot",
+        "wait",
+        "left_click",
+        "double_click",
+        "right_click",
+        "mouse_move",
+        "type",
+        "key",
+        "scroll",
+        "left_click_drag",
+      ]).describe("The action to perform"),
+      coordinate: z.array(z.number()).length(2).optional().describe("The [x, y] coordinate for mouse actions"),
+      text: z.string().optional().describe("Text to type or key to press"),
+      duration: z.number().optional().describe("Duration in seconds for wait action"),
+      scroll_amount: z.number().optional().describe("Amount to scroll"),
+      scroll_direction: z.enum(["up", "down"]).optional().describe("Direction to scroll"),
+      start_coordinate: z.array(z.number()).length(2).optional().describe("Starting coordinate for drag action"),
+    }),
     execute: async ({
       action,
       coordinate,
@@ -26,21 +45,17 @@ export const computerTool = (sandboxId: string) =>
       switch (action) {
         case "screenshot": {
           const image = await desktop.screenshot();
-          // Convert image data to base64 immediately
           const base64Data = Buffer.from(image).toString("base64");
           return {
             type: "image" as const,
-            data: base64Data,
+            data: `data:image/png;base64,${base64Data}`,
           };
         }
         case "wait": {
           if (!duration) throw new Error("Duration required for wait action");
           const actualDuration = Math.min(duration, 2);
           await wait(actualDuration);
-          return {
-            type: "text" as const,
-            text: `Waited for ${actualDuration} seconds`,
-          };
+          return `Waited for ${actualDuration} seconds`;
         }
         case "left_click": {
           if (!coordinate)
@@ -48,7 +63,7 @@ export const computerTool = (sandboxId: string) =>
           const [x, y] = coordinate;
           await desktop.moveMouse(x, y);
           await desktop.leftClick();
-          return { type: "text" as const, text: `Left clicked at ${x}, ${y}` };
+          return `Left clicked at ${x}, ${y}`;
         }
         case "double_click": {
           if (!coordinate)
@@ -56,10 +71,7 @@ export const computerTool = (sandboxId: string) =>
           const [x, y] = coordinate;
           await desktop.moveMouse(x, y);
           await desktop.doubleClick();
-          return {
-            type: "text" as const,
-            text: `Double clicked at ${x}, ${y}`,
-          };
+          return `Double clicked at ${x}, ${y}`;
         }
         case "right_click": {
           if (!coordinate)
@@ -67,24 +79,24 @@ export const computerTool = (sandboxId: string) =>
           const [x, y] = coordinate;
           await desktop.moveMouse(x, y);
           await desktop.rightClick();
-          return { type: "text" as const, text: `Right clicked at ${x}, ${y}` };
+          return `Right clicked at ${x}, ${y}`;
         }
         case "mouse_move": {
           if (!coordinate)
             throw new Error("Coordinate required for mouse move action");
           const [x, y] = coordinate;
           await desktop.moveMouse(x, y);
-          return { type: "text" as const, text: `Moved mouse to ${x}, ${y}` };
+          return `Moved mouse to ${x}, ${y}`;
         }
         case "type": {
           if (!text) throw new Error("Text required for type action");
           await desktop.write(text);
-          return { type: "text" as const, text: `Typed: ${text}` };
+          return `Typed: ${text}`;
         }
         case "key": {
           if (!text) throw new Error("Key required for key action");
           await desktop.press(text === "Return" ? "enter" : text);
-          return { type: "text" as const, text: `Pressed key: ${text}` };
+          return `Pressed key: ${text}`;
         }
         case "scroll": {
           if (!scroll_direction)
@@ -96,46 +108,29 @@ export const computerTool = (sandboxId: string) =>
             scroll_direction as "up" | "down",
             scroll_amount,
           );
-          return { type: "text" as const, text: `Scrolled ${text}` };
+          return `Scrolled ${scroll_direction} by ${scroll_amount}`;
         }
         case "left_click_drag": {
           if (!start_coordinate || !coordinate)
-            throw new Error("Coordinate required for mouse move action");
+            throw new Error("Coordinate required for drag action");
           const [startX, startY] = start_coordinate;
           const [endX, endY] = coordinate;
 
           await desktop.drag([startX, startY], [endX, endY]);
-          return {
-            type: "text" as const,
-            text: `Dragged mouse from ${startX}, ${startY} to ${endX}, ${endY}`,
-          };
+          return `Dragged mouse from ${startX}, ${startY} to ${endX}, ${endY}`;
         }
         default:
           throw new Error(`Unsupported action: ${action}`);
       }
     },
-    experimental_toToolResultContent(result) {
-      if (typeof result === "string") {
-        return [{ type: "text", text: result }];
-      }
-      if (result.type === "image" && result.data) {
-        return [
-          {
-            type: "image",
-            data: result.data,
-            mimeType: "image/png",
-          },
-        ];
-      }
-      if (result.type === "text" && result.text) {
-        return [{ type: "text", text: result.text }];
-      }
-      throw new Error("Invalid result format");
-    },
   });
 
 export const bashTool = (sandboxId?: string) =>
-  anthropic.tools.bash_20250124({
+  tool({
+    description: "Execute bash commands in the desktop environment",
+    parameters: z.object({
+      command: z.string().describe("The bash command to execute"),
+    }),
     execute: async ({ command }) => {
       const desktop = await getDesktop(sandboxId);
 
